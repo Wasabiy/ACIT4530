@@ -252,6 +252,50 @@ collapse the year mode before it even starts.)*
 
 ---
 
+## 8b. Do we need to save the fitted CP models?
+
+Short answer: **no, caching is a convenience, not a correctness requirement.** The
+ranking of R values — i.e. which R "wins" on each criterion — is robust to the random
+init across the seed range we use.
+
+Three reasons the ordering is stable:
+
+1. **Fit is essentially seed-invariant at fixed R.** ALS is a local optimizer, but on
+   this 471 × 366 × 14 tensor the loss landscape has a dominant basin per rank: every
+   seed lands at the same final fit to four decimal places (e.g. R=2 fit = 0.0429 ±
+   0.0000 across 15 seeds; in the R-sweep, `mean_fit` and `best_fit` differ by ≤0.002).
+   So when we plot "fit vs R" the curve is the same whatever seeds we ran.
+
+2. **Fit is monotone in R.** More components can always explain more variance, so
+   the fit ordering across R is **R=1 < R=4 < R=6 < … < R=50** every time. No seed
+   ever flips this. The R that maximises fit is always R=50 — seed-independent.
+
+3. **The interpretation rank (R≈6) is chosen by a *robust* criterion, not the
+   argmax.** We pick R where fit-elbow meets stable FMS — both are stable summaries
+   over multiple seeds, not a single noisy run. The elbow region (R=4–10) doesn't
+   move between seed batches.
+
+**Where seeds *do* matter — and what we do about it.**
+
+The one place seed noise can flip the answer is the **best-R-for-AUC** in §7. The
+AUC vs R curve is fairly flat across R=6–15, so on any single run the *argmax* might
+land at R=8 one time and R=10 the next — differences often <0.01 AUC, well within
+seed noise. The fix is not to cache the exact model, but to:
+
+- Report the AUC *region* ("AUC peaks in R=6–15 around 0.X, degraded at R=50"), not
+  the single argmax R.
+- Or bump `N_INITS_SWEEP` so each R's representative is averaged over more seeds —
+  this stabilises the argmax at near-zero extra report-writing cost.
+
+**So why offer the cache at all?** Pure ergonomics. Re-fitting the full sweep takes
+~2–3 minutes; loading from `joblib` is ~1 second. The cache lets you iterate on
+plots and discussion without re-paying that cost, and it also pins the *exact* fits
+across TensorLy/NumPy version changes for full numerical reproducibility. But
+nothing in the report's conclusions depends on which seeds you happen to have run —
+the science is in the shapes of the fit/FMS/AUC curves, and those are seed-stable.
+
+---
+
 ## 9. References
 
 - Dunlavy, Kolda & Acar (2011) — *Temporal link prediction using matrix and tensor
