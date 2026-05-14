@@ -19,7 +19,8 @@ Each entry `X[i,j,k]` is the number of papers author *i* published at conference
 otherwise) and try to predict it from `X`.
 
 This is a **temporal link-prediction** problem: given a sparse history, predict which
-author–conference links appear next year. The framing follows Dunlavy, Kolda & Acar (2011).
+author–conference links appear next year. The framing follows Dunlavy, Kolda & Acar (2011)
+[D-K-A 2011].
 
 ---
 
@@ -91,9 +92,9 @@ U, s, Vt = np.linalg.svd(Z, full_matrices=False)
 Z_k = U[:, :k] @ np.diag(s[:k]) @ Vt[:k, :]
 ```
 
-**Why this is the "best" rank-K approximation.** The Eckart–Young theorem: among all matrices
-of rank ≤ K, `Z_k` minimizes both the Frobenius and spectral reconstruction error. SVD gives us
-this optimum in closed form.
+**Why this is the "best" rank-K approximation.** The Eckart–Young theorem [Eckart-Young 1936;
+Mirsky 1960]: among all matrices of rank ≤ K, `Z_k` minimizes both the Frobenius and spectral
+reconstruction error. SVD gives us this optimum in closed form [Golub-VanLoan 2013, §2.4].
 
 **`full_matrices=False`** — returns the **thin** SVD. For an `m × n` matrix with `m > n`, the
 full `U` is `m × m` (mostly zeros) and the thin `U` is `m × n`. Same approximation, much less
@@ -125,7 +126,7 @@ auc = roc_auc_score(y_true_flat, scores_flat)
 **What we feed it.** `y_true_flat` is the flattened binarized `Y` (1 if author *i* published at
 conference *j* in 2005, else 0). `scores_flat` is the flattened `Z_k` — we use raw
 reconstruction values as the score, not thresholded predictions, so the ROC curve can sweep
-every possible threshold.
+every possible threshold [Fawcett 2006].
 
 **Reading AUC.**
 - 0.5 = random guessing.
@@ -147,7 +148,8 @@ weights, factors = parafac(X_log, rank=R, init='random', n_iter_max=500, tol=1e-
                            return_errors=False, random_state=seed)
 ```
 
-**What CP does.** It factors a 3-way tensor `X` into a sum of `R` rank-one tensors:
+**What CP does.** It factors a 3-way tensor `X` into a sum of `R` rank-one tensors
+[Hitchcock 1927; Carroll-Chang 1970; Harshman 1970; K&B 2009]:
 
 ```
 X[i,j,k] ≈ Σ_{r=1..R}  λ_r · A[i,r] · B[j,r] · C[k,r]
@@ -159,10 +161,11 @@ authors that load high on `A[:,r]`, the conferences that load high on `B[:,r]`, 
 temporal shape `C[:,r]`. That's a *theme* — a group of authors who publish at a group of
 conferences with a particular time profile.
 
-**Why CP and not Tucker?** Tucker decomposition uses a core tensor and is more flexible but
-**non-unique**. CP is essentially unique under mild conditions (Kruskal's theorem), which is
-what makes its components *interpretable*. That uniqueness is the whole reason CP is the
-workhorse for exploratory tensor analysis.
+**Why CP and not Tucker?** Tucker decomposition [Tucker 1966] uses a core tensor and is more
+flexible but **non-unique**. CP is essentially unique under mild conditions (Kruskal's theorem)
+[Kruskal 1977; Sidiropoulos-Bro 2000], which is what makes its components *interpretable*.
+That uniqueness is the whole reason CP is the workhorse for exploratory tensor analysis
+[K&B 2009, §3.2].
 
 ### Key parameters
 
@@ -176,9 +179,9 @@ workhorse for exploratory tensor analysis.
 | `random_state=seed` | Seeds the init | Reproducibility. We vary it across the 10–20 runs. |
 
 **What ALS does.** Alternating Least Squares: hold two factor matrices fixed, solve for the
-third by least squares; rotate. Repeat until the reconstruction error stops decreasing. It's a
-local optimizer — it can land in different local optima depending on the random init, which is
-exactly why we run many seeds.
+third by least squares; rotate. Repeat until the reconstruction error stops decreasing
+[Carroll-Chang 1970; Harshman 1970; K&B 2009, §3.4]. It's a local optimizer — it can land in
+different local optima depending on the random init, which is exactly why we run many seeds.
 
 ### Fit
 
@@ -191,10 +194,11 @@ A scalar in [0, 1]. Higher is better. 1.0 = exact reconstruction.
 ### Factor Match Score (FMS) — `tlviz.factor_tools.factor_match_score`
 
 For two CP models from different random inits, FMS measures how *similar* the resulting
-components are (with permutation/sign ambiguity handled internally). FMS = 1 means the two
-runs found essentially the same decomposition. **Low FMS across runs at the same rank ⇒ the
-decomposition is unstable at this rank**, often a sign that the rank is too high. High FMS ⇒
-the model is well-identified and the components mean something.
+components are (with permutation/sign ambiguity handled internally) [Bro-Kiers 2003;
+Roald-Moe 2022]. FMS = 1 means the two runs found essentially the same decomposition.
+**Low FMS across runs at the same rank ⇒ the decomposition is unstable at this rank**, often
+a sign that the rank is too high. High FMS ⇒ the model is well-identified and the components
+mean something.
 
 ### Choosing the "best" rank
 
@@ -205,6 +209,65 @@ Two signals, looked at together:
 
 For DBLP with this setup, R between 4 and 10 is usually the interpretable sweet spot —
 typically around R = 6.
+
+---
+
+## 6b. Nonnegative CP vs unconstrained CP
+
+Plain `parafac` places **no constraints** on the factor entries — `A`, `B`, `C` can be any
+real numbers, positive or negative. `tensorly.decomposition.non_negative_parafac` adds the
+constraint `A, B, C ≥ 0` everywhere [Lee-Seung 1999; Lee-Seung 2001; Welling-Weber 2001;
+Cichocki et al. 2009; K&B 2009, §4.3].
+
+### Why the unconstrained version produces negative loadings
+
+CP has a built-in **sign ambiguity**: within any one component you can flip the sign of any
+two of the three factor vectors and the rank-one term `λ_r · a_r ⊗ b_r ⊗ c_r` is unchanged
+[K&B 2009, §3.2]. On top of that, individual entries inside a single factor vector are also
+unconstrained, so a component can legitimately have a positive loading on some conferences
+and a negative loading on others. In the DBLP fit at R = 6 you can see this in Figure 6:
+`CONF/IPPS` sits with a small *negative* loading next to a wall of positive EDA venues. The
+model is saying "authors active on this component publish at DAC/ICCAD/etc. **instead of**
+IPPS" — a contrast pattern, not a positivity pattern.
+
+### Why that contrast helps fit
+
+Unconstrained CP has a richer hypothesis space. A single component can encode a
+"do X, don't do Y" contrast (positive on X, negative on Y), which lets the model explain
+more variance per component. Nonnegative CP cannot represent contrasts inside one component
+— "X but not Y" has to be split across two components, or it gets pushed into the residual.
+For the same rank R, unconstrained CP therefore typically attains a strictly better
+reconstruction error [K&B 2009, §4.3; Cichocki et al. 2009].
+
+### Why the nonnegative version is often more interpretable
+
+When `A, B, C ≥ 0`, each component becomes a strictly additive part: "how much" of an
+author/conference/year, never "instead of." This is the same intuition as nonnegative matrix
+factorisation [Lee-Seung 1999; Lee-Seung 2001] — components behave like soft cluster
+memberships rather than signed contrasts. There is no sign-flip ambiguity, the scale is
+fixed by the nonnegativity, and the components compose by summation, which is what most
+people mean when they say "an interpretable decomposition." Nonnegative CP is also identifiable
+under milder conditions than unconstrained CP in some settings [Lim-Comon 2009].
+
+### The actual trade-off
+
+| Axis | Unconstrained CP | Nonnegative CP |
+|---|---|---|
+| Fit at fixed R | Equal or better — strictly larger feasible set | Equal or worse |
+| Interpretability | Loadings are "directional" — signs encode contrast | Loadings are "amounts" — strictly additive parts |
+| Sign / scale identifiability | Sign ambiguity within each component | Fully resolved — no sign flips, scale fixed by `≥ 0` |
+| Algorithm | ALS with unconstrained least-squares subproblems | ALS with nonnegative least squares (NNLS) or multiplicative updates [Lee-Seung 2001; Cichocki et al. 2009] |
+| Typical # iterations | Lower | Higher — NNLS is more expensive per ALS sweep |
+| Use case in this assignment | Best for the **R-sweep / fit / FMS / AUC** experiments — we want the cleanest measurement of how rank affects fit | Best for the **report figure** at R = 6 if we want loadings that read as "how much" without having to explain negative bars |
+
+### How this connects to Figure 6 in the notebook
+
+`top_k` sorts by `np.abs(loading)`, so IPPS shows up because `|−0.05|` is larger than the
+next positive value, not because IPPS is "more important than DAC." Sorting by magnitude is
+the standard CP-reading convention precisely because of the sign ambiguity. If we wanted the
+figure to be a pure "top-10 most loaded conferences, no negatives," the cleanest fix is to
+re-fit with `non_negative_parafac` at the same R; the EDA story does not change but the
+display is unambiguous.
 
 ---
 
@@ -219,7 +282,7 @@ y_pred_score = X_hat[:, :, -3:].mean(axis=2)   # average last three years
 **Why average the last three time-points?** It's a poor man's forecast. CP gives us a *smooth*
 model of the temporal mode, so the reconstructed tensor is denoised. Averaging the most recent
 years assumes 2005 looks like a continuation of 2002–2004 — a reasonable assumption for a slow
-domain like academic publishing.
+domain like academic publishing [D-K-A 2011, §3].
 
 We then score predictions against the binarized `Y` with ROC/AUC, the same way we did for SVD.
 
@@ -298,9 +361,94 @@ the science is in the shapes of the fit/FMS/AUC curves, and those are seed-stabl
 
 ## 9. References
 
-- Dunlavy, Kolda & Acar (2011) — *Temporal link prediction using matrix and tensor
-  factorizations.* The paper this assignment is built on.
-- Kolda & Bader (2009) — *Tensor decompositions and applications.* The canonical CP/Tucker
-  reference.
-- Kossaifi et al. (2019) — *TensorLy: Tensor Learning in Python.* The library docs.
-- Roald & Moe (2022) — *TLViz.* The visualisation/FMS library.
+In-text citations use short tags (e.g. `[K&B 2009]`); the full entries are below, grouped by
+topic.
+
+### The assignment paper
+
+- **[D-K-A 2011]** Dunlavy, D. M., Kolda, T. G., & Acar, E. (2011). *Temporal link prediction
+  using matrix and tensor factorizations.* ACM Transactions on Knowledge Discovery from Data,
+  5(2), Article 10. doi:10.1145/1921632.1921636. — Frames the DBLP author × conference × year
+  prediction task and the "average last-N reconstructed slices" forecasting recipe used in § 7.
+
+### CP / PARAFAC core references
+
+- **[K&B 2009]** Kolda, T. G., & Bader, B. W. (2009). *Tensor decompositions and applications.*
+  SIAM Review, 51(3), 455–500. doi:10.1137/07070111X. — The canonical survey: CP, Tucker, ALS,
+  uniqueness, nonnegative variants.
+- **[Hitchcock 1927]** Hitchcock, F. L. (1927). *The expression of a tensor or a polyadic as
+  a sum of products.* Journal of Mathematics and Physics, 6(1–4), 164–189. — The original CP
+  idea ("polyadic decomposition").
+- **[Carroll-Chang 1970]** Carroll, J. D., & Chang, J. J. (1970). *Analysis of individual
+  differences in multidimensional scaling via an N-way generalization of "Eckart–Young"
+  decomposition.* Psychometrika, 35(3), 283–319. — One of the two independent re-discoveries
+  ("CANDECOMP") that established ALS for CP.
+- **[Harshman 1970]** Harshman, R. A. (1970). *Foundations of the PARAFAC procedure: Models
+  and conditions for an "explanatory" multi-modal factor analysis.* UCLA Working Papers in
+  Phonetics, 16, 1–84. — The other independent re-discovery ("PARAFAC").
+- **[Tucker 1966]** Tucker, L. R. (1966). *Some mathematical notes on three-mode factor
+  analysis.* Psychometrika, 31(3), 279–311. — Defines the Tucker decomposition (the
+  non-unique, more flexible cousin of CP).
+
+### Uniqueness and identifiability
+
+- **[Kruskal 1977]** Kruskal, J. B. (1977). *Three-way arrays: Rank and uniqueness of
+  trilinear decompositions, with application to arithmetic complexity and statistics.* Linear
+  Algebra and its Applications, 18(2), 95–138. — Kruskal's sufficient condition for CP
+  uniqueness.
+- **[Sidiropoulos-Bro 2000]** Sidiropoulos, N. D., & Bro, R. (2000). *On the uniqueness of
+  multilinear decomposition of N-way arrays.* Journal of Chemometrics, 14(3), 229–239. —
+  Generalises Kruskal's condition to N-way tensors.
+
+### Nonnegative factorisation (§ 6b)
+
+- **[Lee-Seung 1999]** Lee, D. D., & Seung, H. S. (1999). *Learning the parts of objects by
+  non-negative matrix factorization.* Nature, 401(6755), 788–791. — Introduces NMF and the
+  "parts-based representation" intuition that carries over to nonnegative CP.
+- **[Lee-Seung 2001]** Lee, D. D., & Seung, H. S. (2001). *Algorithms for non-negative matrix
+  factorization.* Advances in Neural Information Processing Systems (NeurIPS) 13, 556–562. —
+  Multiplicative-update algorithms used inside many nonnegative-CP implementations.
+- **[Welling-Weber 2001]** Welling, M., & Weber, M. (2001). *Positive tensor factorization.*
+  Pattern Recognition Letters, 22(12), 1255–1261. — Early extension of NMF to 3-way tensors.
+- **[Cichocki et al. 2009]** Cichocki, A., Zdunek, R., Phan, A. H., & Amari, S. (2009).
+  *Nonnegative matrix and tensor factorizations: Applications to exploratory multi-way data
+  analysis and blind source separation.* Wiley. — Book-length treatment of nonnegative
+  matrix/tensor factorisation algorithms.
+- **[Lim-Comon 2009]** Lim, L.-H., & Comon, P. (2009). *Nonnegative approximations of
+  nonnegative tensors.* Journal of Chemometrics, 23(7–8), 432–441. — Identifiability and
+  existence results specific to nonnegative tensor decomposition.
+
+### SVD background (§§ 3–5)
+
+- **[Eckart-Young 1936]** Eckart, C., & Young, G. (1936). *The approximation of one matrix by
+  another of lower rank.* Psychometrika, 1(3), 211–218. — The optimality theorem for
+  truncated SVD under the Frobenius norm.
+- **[Mirsky 1960]** Mirsky, L. (1960). *Symmetric gauge functions and unitarily invariant
+  norms.* The Quarterly Journal of Mathematics, 11(1), 50–59. — Extends Eckart–Young to all
+  unitarily invariant norms (including the spectral norm).
+- **[Golub-VanLoan 2013]** Golub, G. H., & Van Loan, C. F. (2013). *Matrix computations*
+  (4th ed.). Johns Hopkins University Press. — Standard reference for the numerical SVD
+  algorithm and the thin-SVD form used in § 4.
+
+### Evaluation (§ 5)
+
+- **[Fawcett 2006]** Fawcett, T. (2006). *An introduction to ROC analysis.* Pattern
+  Recognition Letters, 27(8), 861–874. — Practical guide to ROC curves and AUC, including why
+  AUC is preferred over accuracy on imbalanced data.
+
+### Stability diagnostics (§ 6, FMS)
+
+- **[Bro-Kiers 2003]** Bro, R., & Kiers, H. A. L. (2003). *A new efficient method for
+  determining the number of components in PARAFAC models.* Journal of Chemometrics, 17(5),
+  274–286. — The CORCONDIA diagnostic and the broader practice of measuring component
+  similarity across runs that FMS formalises.
+
+### Libraries used in the notebook
+
+- **[Kossaifi et al. 2019]** Kossaifi, J., Panagakis, Y., Anandkumar, A., & Pantic, M. (2019).
+  *TensorLy: Tensor Learning in Python.* Journal of Machine Learning Research, 20(26), 1–6. —
+  The `tensorly` library, which provides `parafac` and `non_negative_parafac`.
+- **[Roald-Moe 2022]** Roald, M., & Moe, Y. M. (2022). *TLViz: Visualising and analysing
+  tensor decomposition models with Python.* Journal of Open Source Software, 7(78), 4754.
+  doi:10.21105/joss.04754. — The `tlviz` library; provides `factor_match_score` used for
+  FMS in § 6.
