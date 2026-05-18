@@ -83,6 +83,42 @@ Z2 = (X_log * weights[None, None, :]).sum(axis=2)
 
 The choice of θ is a hyperparameter we tune on the prediction AUC.
 
+#### Half-life of θ — making the hyperparameter interpretable
+
+A raw θ value is hard to reason about ("is 0.25 a lot of decay?"). The natural translation is the
+**half-life** $h$ of the exponential weight — how many years back from the most recent year
+$T$ the weight has dropped to ½. Solving
+
+$$(1-\theta)^{h} = \tfrac{1}{2}$$
+
+gives
+
+$$h \;=\; \frac{\log(0.5)}{\log(1-\theta)} \;=\; \frac{-\ln 2}{\ln(1-\theta)}.$$
+
+This makes θ readable in the units of the actual problem:
+
+| θ    | half-life $h$ (years) | meaning in plain English                                          |
+|------|-----------------------|-------------------------------------------------------------------|
+| 0.01 | ≈ 69                  | almost no decay across the 14-year window — basically Approach 1  |
+| 0.1  | ≈ 6.6                 | mild recency bias — half the influence ~6 years back              |
+| 0.25 | ≈ 2.4                 | model "forgets" papers older than ~2–3 years — common sweet spot  |
+| 0.5  | = 1                   | every year halves the influence — strong recency                  |
+| 0.75 | ≈ 0.5                 | recent 1–2 years carry essentially all the weight                 |
+| 1.0  | = 0                   | only the last year survives (degenerate: 0⁰=1, 0ᵏ=0 for k≥1)      |
+
+**Why half-life is the right summary, not θ itself.** The exponential `(1 − θ)^(T − t)` has no
+natural scale — it depends on the time-step granularity. Half-life expresses the same decay in
+the *unit of the data* (here, years), which is what you actually want when reasoning about
+"how much memory should the model keep?" The same trick is used in finance (decay constants for
+moving averages), reinforcement learning (effective horizon of a discount factor γ, where
+γ = 1 − θ), and physics (radioactive decay).
+
+**Operational rule of thumb.** When choosing θ for this dataset, pick the *half-life you'd
+defend in writing*. If you think a 5-year-old paper still tells you something about an author's
+2005 publications, you want θ ≈ 0.1 (h ≈ 6.6 yr). If you think research interests turn over
+every ~2 years, you want θ ≈ 0.25 (h ≈ 2.4 yr). The AUC grid search then validates whether the
+data agrees with that prior.
+
 ---
 
 ## 4. Truncated SVD — `np.linalg.svd` + rank-K truncation *(background)*
