@@ -149,6 +149,71 @@ Big K reconstructs the *training* matrix perfectly, including its noise. For pre
 structure, small enough to avoid memorizing the past. We sweep `K ∈ {2, 10, 20, 50, 100, 300}`
 and pick the K with the highest AUC on `Y`.
 
+### Reading U, Sigma, V^T — the "theme" framing
+
+The SVD is more than a numerical trick; the three factors are individually meaningful. The
+assignment doesn't require this interpretation for the SVD section (only for CP), but it
+makes the prediction logic readable and is useful for the report.
+
+Rewrite the SVD as a sum of `r = min(m, n) = 366` rank-1 pieces:
+
+```
+Z = sum_{k=1..366}  sigma_k * u_k * v_k^T
+```
+
+Each `k` is a **latent theme** (also called a latent factor, component, or concept). A theme
+is a triple `(u_k, sigma_k, v_k)`:
+
+- `u_k = U[:, k]` (length 471) — author loadings for theme `k`. Big positive entry = author
+  belongs strongly to that theme.
+- `v_k = V[:, k]` (length 366) — conference loadings for theme `k`. Big positive entry =
+  conference is a venue for that theme.
+- `sigma_k` — strength of theme `k`. The singular values are sorted descending, so theme 1
+  is the dominant co-publication pattern in the data and theme 366 is essentially noise.
+
+**Reading each matrix correctly:**
+
+| Object        | Shape       | What it actually is                                          |
+|---------------|-------------|--------------------------------------------------------------|
+| `U[:, k]`     | `(471,)`    | how strongly each **author** belongs to theme `k`            |
+| `Sigma[k,k]`  | scalar      | how **important** theme `k` is overall                       |
+| `V[:, k]`     | `(366,)`    | how strongly each **conference** belongs to theme `k`        |
+| `U[i, :]`     | `(366,)`    | author `i`'s **coordinates in theme-space** (fingerprint)    |
+| `V[j, :]`     | `(366,)`    | conference `j`'s **coordinates in theme-space** (fingerprint)|
+
+Three common misreadings to avoid:
+
+- **`U` is not "which conferences each author prefers."** `U` is an author-theme map; the
+  conference-side information lives in `V`. You only get author-conference statements after
+  multiplying the whole SVD back together.
+- **`Sigma` does not rank conferences.** It ranks **themes**. A single conference like `DAC`
+  spreads its weight across many themes; its overall "importance" isn't a single `sigma`.
+- **`V^T` is not a conference-similarity matrix directly.** It is the basis. Conference
+  similarity comes from inner products `V[j, :] . V[j', :]^T` — equivalently, from
+  `Z^T * Z = V * Sigma^2 * V^T`.
+
+**Why this matters for prediction.** The rank-K score that we use to predict `Y[i, j]` is
+literally a theme-weighted match:
+
+```
+Z_K[i, j] = sum_{k=1..K}  sigma_k * U[i, k] * V[j, k]
+```
+
+In words: "summed over the top K themes, multiply how much author `i` belongs to theme `k`
+times how much conference `j` belongs to theme `k`, weighted by theme strength `sigma_k`."
+Author `i` is predicted to publish at conference `j` if **they share a strong theme** — i.e.
+if both have large loadings on the same `k`'s. The truncation `K < 366` drops weak themes
+that are mostly noise; that is exactly why low-rank SVD generalises to 2005 instead of
+memorising 1991-2004.
+
+**Why "theme" is the right word for this DBLP data.** The dataset's strongest patterns are
+research communities: VLSI/EDA papers cluster around `DAC`/`ICCAD`/`ICCD`, image-processing
+papers around `ICIP`/`MICCAI`, databases around `VLDB`/`SIGMOD`/`ICDE`. The dominant SVD
+themes will pick these up automatically as joint author-cluster + conference-cluster pairs.
+This is the same machinery as Latent Semantic Analysis on document-term matrices
+[Deerwester et al. 1990] and matrix-factorisation recommender systems on user-item matrices
+[Koren-Bell-Volinsky 2009].
+
 ---
 
 ## 5. ROC curve & AUC — `sklearn.metrics`
